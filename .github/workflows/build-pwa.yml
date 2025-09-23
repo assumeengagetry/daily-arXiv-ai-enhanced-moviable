@@ -1,0 +1,47 @@
+name: Build PWA & Save Artifacts
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (production)
+        run: npm run build
+
+      - name: Run Lighthouse (optional)
+        # Example: run lighthouse using npm script or lhci
+        run: npx -y @lhci/cli autorun --config=./.lighthouserc || true
+
+      - name: Create safe artifact name
+        run: |
+          raw_ref="${GITHUB_REF#refs/heads/}"
+          safe_ref=$(echo "$raw_ref" | tr '/ ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+          echo "ARTIFACT_NAME=lighthouse-results-${safe_ref:0:60}" >> $GITHUB_ENV
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: |
+            ./lighthouse-report || true
+            ./dist || true
