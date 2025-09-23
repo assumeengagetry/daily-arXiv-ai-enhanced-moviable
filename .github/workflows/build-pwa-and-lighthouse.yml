@@ -1,0 +1,60 @@
+name: Build PWA & Lighthouse (fork-friendly)
+
+# 触发：
+# - push 到默认分支（比如 main）
+# - 手动触发（Actions -> Run workflow）
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read    # 最小权限（需要写权限时改为 write）
+  # 如果你要在同仓库直接部署 pages，后面可以在 job/repo 里设置 pages: write
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install node & dependencies
+        run: |
+          npm ci
+          # 如果项目使用 pnpm/yarn 可替换
+
+      - name: Build site (production)
+        run: |
+          npm run build
+
+      - name: Create safe artifact name
+        # 这一段把分支名 sanitize 成只含 a-z0-9._-
+        run: |
+          raw_ref="${GITHUB_REF#refs/heads/}"
+          safe_ref=$(echo "$raw_ref" \
+            | tr '/ ' '-' \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9._-]/-/g')
+          safe_ref="${safe_ref:0:60}"   # 可选：限制长度
+          echo "ARTIFACT_NAME=lighthouse-results-${safe_ref}" >> $GITHUB_ENV
+          echo "ARTIFACT_NAME sanitized: $ARTIFACT_NAME"
+
+      - name: (optional) Run Lighthouse CI or lighthouse CLI
+        # 这里示例用 lighthouse-ci autorun（根据你的项目调整）
+        run: |
+          # 安装 lighthouse-ci 如果需要
+          npx -y @lhci/cli autorun --upload --upload.token="${{ secrets.LHCI_TOKEN || '' }}" || true
+        # 注意：如果你需要上传到第三方 LHCI 服务，需要在 fork 的仓库里设置 secrets（或在上游）
+        # 这里命令不依赖 GITHUB_TOKEN
+
+      - name: Upload lighthouse/build artifacts (run only in this fork)
+        # 在 fork 自己仓库上 push/workflow_dispatch 时，这一步会被允许
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: |
+            ./lighthouse-results || true
+            ./dist   # 如果 build 输出在 dist
