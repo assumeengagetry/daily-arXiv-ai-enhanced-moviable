@@ -1,0 +1,51 @@
+# .github/workflows/build-pwa.yml
+name: Build PWA (with npm ci fallback)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'   # 按需替换
+
+      - name: Show files & Node versions
+        run: |
+          node -v
+          npm -v
+          ls -la
+
+      - name: Try clean install (npm ci), fallback to npm install
+        id: deps
+        run: |
+          set -e
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            echo "Lockfile found -> running npm ci"
+            npm ci --loglevel verbose
+          else
+            echo "No lockfile -> running npm install (fallback)"
+            npm install --no-audit --prefer-offline
+            # 注意：npm install 会生成 package-lock.json locally in the runner,
+            # 但不提交到 repo. 长期应在本地生成并提交 lockfile。
+          fi
+
+      - name: Build
+        run: |
+          npm run build
+
+      - name: Upload artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-build
+          path: ./dist   # 根据你的输出目录调整
