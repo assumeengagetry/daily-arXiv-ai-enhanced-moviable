@@ -1,18 +1,16 @@
-name: Build PWA & Save Artifacts
+# .github/workflows/build-pwa.yml
+name: Build PWA (with npm ci fallback)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   push:
     branches: [ main ]
-
-permissions:
-  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -20,28 +18,34 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '18'   # 按需替换
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build (production)
-        run: npm run build
-
-      - name: Run Lighthouse (optional)
-        # Example: run lighthouse using npm script or lhci
-        run: npx -y @lhci/cli autorun --config=./.lighthouserc || true
-
-      - name: Create safe artifact name
+      - name: Show files & Node versions
         run: |
-          raw_ref="${GITHUB_REF#refs/heads/}"
-          safe_ref=$(echo "$raw_ref" | tr '/ ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
-          echo "ARTIFACT_NAME=lighthouse-results-${safe_ref:0:60}" >> $GITHUB_ENV
+          node -v
+          npm -v
+          ls -la
 
-      - name: Upload artifacts
+      - name: Try clean install (npm ci), fallback to npm install
+        id: deps
+        run: |
+          set -e
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            echo "Lockfile found -> running npm ci"
+            npm ci --loglevel verbose
+          else
+            echo "No lockfile -> running npm install (fallback)"
+            npm install --no-audit --prefer-offline
+            # 注意：npm install 会生成 package-lock.json locally in the runner,
+            # 但不提交到 repo. 长期应在本地生成并提交 lockfile。
+          fi
+
+      - name: Build
+        run: |
+          npm run build
+
+      - name: Upload artifact (optional)
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: |
-            ./lighthouse-report || true
-            ./dist || true
+          name: site-build
+          path: ./dist   # 根据你的输出目录调整
